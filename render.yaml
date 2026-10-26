@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: atlas-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /atlas-api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ATLAS_DEMO_PASSWORD
+        sync: false
