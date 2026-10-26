@@ -190,7 +190,6 @@ async function workoutPayload(pool, workout) {
     name: workout.name,
     model: workout.model,
     description: workout.description || '',
-    intensity: workout.intensity || 'Moderada',
     estimatedMinutes: Number(workout.estimated_minutes || 0),
     scheduledTime: workout.scheduled_time || '',
     templateId: workout.template_id || null,
@@ -208,7 +207,6 @@ export async function ensureAtlasExtraSchema(pool) {
     ALTER TABLE atlas_users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
     ALTER TABLE atlas_sessions ADD COLUMN IF NOT EXISTS active_role TEXT;
     ALTER TABLE atlas_workouts ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
-    ALTER TABLE atlas_workouts ADD COLUMN IF NOT EXISTS intensity TEXT NOT NULL DEFAULT 'Moderada';
     ALTER TABLE atlas_workouts ADD COLUMN IF NOT EXISTS estimated_minutes INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE atlas_workouts ADD COLUMN IF NOT EXISTS scheduled_time TEXT NOT NULL DEFAULT '';
     ALTER TABLE atlas_workouts ADD COLUMN IF NOT EXISTS template_id UUID;
@@ -230,7 +228,6 @@ export async function ensureAtlasExtraSchema(pool) {
       name TEXT NOT NULL,
       category TEXT NOT NULL DEFAULT '',
       muscle_groups TEXT[] NOT NULL DEFAULT '{}',
-      intensity TEXT NOT NULL DEFAULT 'Moderada',
       description TEXT NOT NULL DEFAULT '',
       video_url TEXT,
       video_data BYTEA,
@@ -245,7 +242,6 @@ export async function ensureAtlasExtraSchema(pool) {
       trainer_id UUID NOT NULL REFERENCES atlas_users(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
-      intensity TEXT NOT NULL DEFAULT 'Moderada',
       notes TEXT NOT NULL DEFAULT '',
       estimated_minutes INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -476,7 +472,6 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
         name: String(req.query.name || '').trim(),
         category: String(req.query.category || '').trim(),
         muscle: String(req.query.muscle || '').trim(),
-        intensity: String(req.query.intensity || '').trim(),
       };
 
       if (filters.name) {
@@ -491,14 +486,9 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
         params.push(`%${filters.muscle}%`);
         where.push('EXISTS (SELECT 1 FROM unnest(e.muscle_groups) AS mg WHERE mg ILIKE $' + params.length + ')');
       }
-      if (filters.intensity) {
-        params.push(filters.intensity);
-        where.push('e.intensity ILIKE $' + params.length);
-      }
-
       const { rows } = await pool.query(
         `SELECT e.id, e.name, e.category, e.muscle_groups AS "muscleGroups",
-                e.intensity, e.description, e.video_url AS "videoUrl",
+                e.description, e.video_url AS "videoUrl",
                 (e.video_data IS NOT NULL) AS "hasUploadedVideo",
                 e.video_mime AS "videoMime", e.video_filename AS "videoFilename",
                 e.owner_id AS "ownerId", e.created_at AS "createdAt"
@@ -518,7 +508,6 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
       const muscleGroups = Array.isArray(req.body?.muscleGroups)
         ? [...new Set(req.body.muscleGroups.map((item) => String(item || '').trim()).filter(Boolean))].slice(0, 12)
         : [];
-      const intensity = cleanText(req.body?.intensity, 'Intensidade', false, 40) || 'Moderada';
       const description = cleanText(req.body?.description, 'Descrição', false, 3000);
       const videoUrl = cleanText(req.body?.videoUrl, 'URL do vídeo', false, 1800) || null;
 
@@ -542,14 +531,14 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
       const id = crypto.randomUUID();
       const { rows } = await pool.query(
         `INSERT INTO atlas_exercises
-          (id, owner_id, name, category, muscle_groups, intensity, description,
+          (id, owner_id, name, category, muscle_groups, description,
            video_url, video_data, video_mime, video_filename)
-         VALUES ($1, $2, $3, $4, $5::text[], $6, $7, $8, $9, $10, $11)
+         VALUES ($1, $2, $3, $4, $5::text[], $6, $7, $8, $9, $10)
          RETURNING id, name, category, muscle_groups AS "muscleGroups",
-                   intensity, description, video_url AS "videoUrl",
+                   description, video_url AS "videoUrl",
                    (video_data IS NOT NULL) AS "hasUploadedVideo",
                    video_mime AS "videoMime", video_filename AS "videoFilename"`,
-        [id, req.atlasUser.id, name, category, muscleGroups, intensity, description,
+        [id, req.atlasUser.id, name, category, muscleGroups, description,
          videoUrl, videoData, videoMime, videoFilename]
       );
       res.status(201).json(rows[0]);
@@ -571,9 +560,6 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
         ? current.muscle_groups
         : [...new Set((Array.isArray(req.body.muscleGroups) ? req.body.muscleGroups : [])
           .map((item) => String(item || '').trim()).filter(Boolean))].slice(0, 12);
-      const intensity = req.body?.intensity == null
-        ? current.intensity
-        : cleanText(req.body.intensity, 'Intensidade', false, 40) || 'Moderada';
       const description = req.body?.description == null
         ? current.description
         : cleanText(req.body.description, 'Descrição', false, 3000);
@@ -584,13 +570,13 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
       const { rows } = await pool.query(
         `UPDATE atlas_exercises
          SET name = $3, category = $4, muscle_groups = $5::text[],
-             intensity = $6, description = $7, video_url = $8, updated_at = NOW()
+             description = $6, video_url = $7, updated_at = NOW()
          WHERE id = $1 AND owner_id = $2
          RETURNING id, name, category, muscle_groups AS "muscleGroups",
-                   intensity, description, video_url AS "videoUrl",
+                   description, video_url AS "videoUrl",
                    (video_data IS NOT NULL) AS "hasUploadedVideo"`,
         [req.params.id, req.atlasUser.id, name, category, muscleGroups,
-         intensity, description, videoUrl]
+         description, videoUrl]
       );
       res.json(rows[0]);
     } catch (error) { next(error); }
@@ -635,7 +621,7 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
   app.get('/atlas-api/templates', atlasRequireAuth, atlasRole('trainer'), async (req, res, next) => {
     try {
       const { rows: templates } = await pool.query(
-        `SELECT id, name, description, intensity, notes,
+        `SELECT id, name, description, notes,
                 estimated_minutes AS "estimatedMinutes",
                 created_at AS "createdAt", updated_at AS "updatedAt"
          FROM atlas_workout_templates
@@ -664,7 +650,6 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
     try {
       const name = cleanText(req.body?.name, 'Nome do template', true, 120);
       const description = cleanText(req.body?.description, 'Descrição', false, 2000);
-      const intensity = cleanText(req.body?.intensity, 'Intensidade', false, 40) || 'Moderada';
       const notes = cleanText(req.body?.notes, 'Observações', false, 3000);
       const estimatedMinutes = Math.max(0, Math.min(600, Number.parseInt(req.body?.estimatedMinutes, 10) || 0));
       const exercises = Array.isArray(req.body?.exercises) ? req.body.exercises : [];
@@ -676,9 +661,9 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
         await client.query('BEGIN');
         await client.query(
           `INSERT INTO atlas_workout_templates
-            (id, trainer_id, name, description, intensity, notes, estimated_minutes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [templateId, req.atlasUser.id, name, description, intensity, notes, estimatedMinutes]
+            (id, trainer_id, name, description, notes, estimated_minutes)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [templateId, req.atlasUser.id, name, description, notes, estimatedMinutes]
         );
 
         for (let index = 0; index < exercises.length; index += 1) {
@@ -723,7 +708,6 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
 
       const name = req.body?.name == null ? current.name : cleanText(req.body.name, 'Nome', true, 120);
       const description = req.body?.description == null ? current.description : cleanText(req.body.description, 'Descrição', false, 2000);
-      const intensity = req.body?.intensity == null ? current.intensity : cleanText(req.body.intensity, 'Intensidade', false, 40);
       const notes = req.body?.notes == null ? current.notes : cleanText(req.body.notes, 'Observações', false, 3000);
       const estimatedMinutes = req.body?.estimatedMinutes == null
         ? current.estimated_minutes
@@ -734,10 +718,10 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
         await client.query('BEGIN');
         await client.query(
           `UPDATE atlas_workout_templates
-           SET name = $3, description = $4, intensity = $5, notes = $6,
-               estimated_minutes = $7, updated_at = NOW()
+           SET name = $3, description = $4, notes = $5,
+               estimated_minutes = $6, updated_at = NOW()
            WHERE id = $1 AND trainer_id = $2`,
-          [req.params.id, req.atlasUser.id, name, description, intensity, notes, estimatedMinutes]
+          [req.params.id, req.atlasUser.id, name, description, notes, estimatedMinutes]
         );
 
         if (Array.isArray(req.body?.exercises)) {
@@ -770,7 +754,7 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
       } finally {
         client.release();
       }
-      res.json({ id: req.params.id, name, description, intensity, notes, estimatedMinutes });
+      res.json({ id: req.params.id, name, description, notes, estimatedMinutes });
     } catch (error) { next(error); }
   });
 
@@ -812,7 +796,6 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
       const name = cleanText(req.body?.name ?? template?.name, 'Nome do treino', true, 120);
       const model = cleanText(req.body?.model, 'Modelo', true, 30).toUpperCase();
       const description = cleanText(req.body?.description ?? template?.description, 'Descrição', false, 2000);
-      const intensity = cleanText(req.body?.intensity ?? template?.intensity, 'Intensidade', false, 40) || 'Moderada';
       const notes = cleanText(req.body?.notes ?? template?.notes, 'Observações', false, 3000);
       const estimatedMinutes = Math.max(
         0, Math.min(600, Number.parseInt(req.body?.estimatedMinutes ?? template?.estimated_minutes, 10) || 0)
@@ -846,11 +829,11 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
         await client.query('BEGIN');
         await client.query(
           `INSERT INTO atlas_workouts
-            (id, trainer_id, student_id, name, model, description, intensity,
+            (id, trainer_id, student_id, name, model, description,
              estimated_minutes, scheduled_time, template_id, notes, scheduled_days)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::smallint[])`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::smallint[])`,
           [workoutId, req.atlasUser.id, studentId, name, model, description,
-           intensity, estimatedMinutes, scheduledTime, templateId, notes, scheduledDays]
+           estimatedMinutes, scheduledTime, templateId, notes, scheduledDays]
         );
 
         for (let index = 0; index < exercises.length; index += 1) {
@@ -890,7 +873,7 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
       }
 
       res.status(201).json({
-        id: workoutId, name, model, description, intensity,
+        id: workoutId, name, model, description,
         estimatedMinutes, scheduledTime, templateId, scheduledDays,
       });
     } catch (error) { next(error); }
@@ -955,13 +938,12 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
         await client.query('BEGIN');
         await client.query(
           `INSERT INTO atlas_workouts
-            (id, trainer_id, student_id, name, model, description, intensity,
+            (id, trainer_id, student_id, name, model, description,
              estimated_minutes, scheduled_time, template_id, notes, scheduled_days)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::smallint[])`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::smallint[])`,
           [
             copiedWorkoutId, req.atlasUser.id, targetStudentId, copiedName, source.model,
-            source.description || '', source.intensity || 'Moderada',
-            Number(source.estimated_minutes || 0), source.scheduled_time || '',
+            source.description || '', Number(source.estimated_minutes || 0), source.scheduled_time || '',
             source.template_id || null, source.notes || '', scheduledDays,
           ]
         );
