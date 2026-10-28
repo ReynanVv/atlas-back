@@ -42,3 +42,7 @@ export function statusForWorkout(workout, latestSession, now = new Date()) {
   if (days.includes(today.getDay())) return 'Pendente'
   return occurrence < today ? 'Não Realizado' : 'Pendente'
 }
+
+export function isWorkoutEditable(sessionCount) {
+  return Number(sessionCount || 0) === 0
+}

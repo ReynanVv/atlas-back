@@ -22,10 +22,10 @@ Este repositório implementa a API do Atlas. As regras abaixo são contratos de 
 10. Mensagens exigem vínculo treinador-aluno.
 11. Notificações cobrem prescrição, mensagem e treino do dia.
 12. **Intensidade não faz parte do domínio do Atlas.**
+13. Uma prescrição pode ser editada por completo enquanto ainda não houver sessão iniciada. Depois do primeiro início, ela fica imutável para preservar o histórico.
 
 ## Lacunas conhecidas
 
-- edição de treino prescrito ainda não está completa;
 - o backend dedicado ainda contém rotas e helpers herdados do ControlFinance;
 - os arquivos `server.js` e `atlas-extra.js` continuam grandes e devem ser separados por domínio de forma incremental.
 

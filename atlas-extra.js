@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { statusForWorkout, workoutDays } from './src/domain/workouts.js';
+import { isWorkoutEditable, statusForWorkout, workoutDays } from './src/domain/workouts.js';
 
 function cleanText(value, label, required = false, max = 2000) {
   const text = value == null ? '' : String(value).trim();
@@ -833,6 +833,179 @@ export function registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRol
         estimatedMinutes, scheduledTime, templateId, scheduledDays,
       });
     } catch (error) { next(error); }
+  });
+
+  app.patch('/atlas-api/workouts/:id', atlasRequireAuth, atlasRole('trainer'), async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const { rows: currentRows } = await client.query(
+        `SELECT *
+         FROM atlas_workouts
+         WHERE id = $1 AND trainer_id = $2
+         FOR UPDATE`,
+        [req.params.id, req.atlasUser.id]
+      );
+      const current = currentRows[0];
+      if (!current) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Treino não encontrado.' });
+      }
+
+      const { rows: sessionRows } = await client.query(
+        'SELECT COUNT(*)::int AS count FROM atlas_workout_sessions WHERE workout_id = $1',
+        [current.id]
+      );
+      if (!isWorkoutEditable(sessionRows[0]?.count)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: 'Este treino já foi iniciado e não pode mais ser editado. Isso preserva o histórico de execução do aluno.',
+        });
+      }
+
+      const studentId = req.body?.studentId == null
+        ? current.student_id
+        : String(req.body.studentId || '').trim();
+      const templateId = req.body?.templateId === undefined
+        ? current.template_id
+        : req.body.templateId ? String(req.body.templateId) : null;
+      const name = req.body?.name == null
+        ? current.name
+        : cleanText(req.body.name, 'Nome do treino', true, 120);
+      const model = req.body?.model == null
+        ? current.model
+        : cleanText(req.body.model, 'Modelo', true, 30).toUpperCase();
+      const description = req.body?.description == null
+        ? (current.description || '')
+        : cleanText(req.body.description, 'Descrição', false, 2000);
+      const notes = req.body?.notes == null
+        ? (current.notes || '')
+        : cleanText(req.body.notes, 'Observações', false, 3000);
+      const estimatedMinutes = req.body?.estimatedMinutes == null
+        ? Number(current.estimated_minutes || 0)
+        : Math.max(0, Math.min(600, Number.parseInt(req.body.estimatedMinutes, 10) || 0));
+      const scheduledTime = req.body?.scheduledTime == null
+        ? (current.scheduled_time || '')
+        : cleanText(req.body.scheduledTime, 'Horário', false, 10);
+      const scheduledDays = req.body?.scheduledDays == null
+        ? (current.scheduled_days || []).map(Number)
+        : workoutDays(req.body.scheduledDays);
+      const exercises = req.body?.exercises === undefined ? null : req.body.exercises;
+
+      if (exercises !== null && (!Array.isArray(exercises) || !exercises.length)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Adicione pelo menos um exercício.' });
+      }
+
+      if (templateId) {
+        const template = await client.query(
+          'SELECT 1 FROM atlas_workout_templates WHERE id = $1 AND trainer_id = $2',
+          [templateId, req.atlasUser.id]
+        );
+        if (!template.rowCount) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: 'Template não encontrado.' });
+        }
+      }
+
+      const linked = await client.query(
+        'SELECT 1 FROM atlas_trainer_students WHERE trainer_id = $1 AND student_id = $2',
+        [req.atlasUser.id, studentId]
+      );
+      if (!linked.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Aluno não vinculado.' });
+      }
+
+      const availabilityResult = await client.query(
+        'SELECT day_of_week FROM atlas_availability WHERE student_id = $1 ORDER BY day_of_week',
+        [studentId]
+      );
+      const availability = availabilityResult.rows.map((item) => Number(item.day_of_week));
+      if (!availability.length) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'O aluno ainda não informou a disponibilidade.' });
+      }
+      if (!scheduledDays.length || scheduledDays.some((day) => !availability.includes(day))) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: 'O treino só pode usar dias disponíveis do aluno.',
+          availability,
+        });
+      }
+
+      await client.query(
+        `UPDATE atlas_workouts
+         SET student_id = $3, name = $4, model = $5, description = $6,
+             estimated_minutes = $7, scheduled_time = $8, template_id = $9,
+             notes = $10, scheduled_days = $11::smallint[]
+         WHERE id = $1 AND trainer_id = $2`,
+        [
+          current.id, req.atlasUser.id, studentId, name, model, description,
+          estimatedMinutes, scheduledTime, templateId, notes, scheduledDays,
+        ]
+      );
+
+      if (exercises !== null) {
+        await client.query('DELETE FROM atlas_workout_exercises WHERE workout_id = $1', [current.id]);
+
+        for (let index = 0; index < exercises.length; index += 1) {
+          const exercise = exercises[index] || {};
+          await client.query(
+            `INSERT INTO atlas_workout_exercises
+              (id, workout_id, exercise_id, name, sets, reps, suggested_weight,
+               rest_seconds, notes, video_url, position)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            [
+              crypto.randomUUID(), current.id, exercise.exerciseId || null,
+              cleanText(exercise.name, 'Exercício', true, 120),
+              Math.max(1, Number.parseInt(exercise.sets, 10) || 1),
+              Math.max(1, Number.parseInt(exercise.reps, 10) || 1),
+              Math.max(0, Number(exercise.suggestedWeight) || 0),
+              Math.max(0, Number.parseInt(exercise.restSeconds, 10) || 0),
+              cleanText(exercise.notes, 'Observações do exercício', false, 1000),
+              cleanText(exercise.videoUrl, 'Vídeo', false, 1800) || null,
+              index,
+            ]
+          );
+        }
+      }
+
+      if (current.student_id !== studentId) {
+        await client.query(
+          `DELETE FROM atlas_notifications
+           WHERE user_id = $1 AND type = 'workout_prescribed' AND reference_id = $2`,
+          [current.student_id, current.id]
+        );
+        await client.query(
+          `INSERT INTO atlas_notifications
+            (id, user_id, type, title, body, reference_id, occurrence_key)
+           VALUES ($1, $2, 'workout_prescribed', 'Novo treino prescrito', $3, $4, '')
+           ON CONFLICT (user_id, type, reference_id, occurrence_key) DO NOTHING`,
+          [crypto.randomUUID(), studentId, name, current.id]
+        );
+      }
+
+      await client.query('COMMIT');
+      res.json({
+        id: current.id,
+        studentId,
+        name,
+        model,
+        description,
+        estimatedMinutes,
+        scheduledTime,
+        templateId,
+        notes,
+        scheduledDays,
+      });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      next(error);
+    } finally {
+      client.release();
+    }
   });
 
   app.post('/atlas-api/workouts/:id/copy', atlasRequireAuth, atlasRole('trainer'), async (req, res, next) => {

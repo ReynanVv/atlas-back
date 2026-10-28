@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { occurrenceDateForWorkout, statusForWorkout, workoutDays } from '../src/domain/workouts.js'
+import { isWorkoutEditable, occurrenceDateForWorkout, statusForWorkout, workoutDays } from '../src/domain/workouts.js'
 
 test('workoutDays normalizes duplicates and sorts days', () => {
   assert.deepEqual(workoutDays([3, 1, 3, 5]), [1, 3, 5])
@@ -38,4 +38,11 @@ test('statusForWorkout keeps an active session pending', () => {
   const monday = new Date(2026, 9, 26, 12, 0, 0)
   const session = { startedAt: new Date(2026, 9, 26, 11, 0, 0).toISOString(), completedAt: null }
   assert.equal(statusForWorkout({ scheduled_days: [1] }, session, monday), 'Pendente')
+})
+
+test('isWorkoutEditable blocks prescriptions after any session exists', () => {
+  assert.equal(isWorkoutEditable(0), true)
+  assert.equal(isWorkoutEditable('0'), true)
+  assert.equal(isWorkoutEditable(1), false)
+  assert.equal(isWorkoutEditable(3), false)
 })
