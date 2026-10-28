@@ -136,6 +136,7 @@ export function registerLinkRequestRoutes({ app, pool, atlasRequireAuth, atlasRo
         studentId: request.student_id,
         studentName: request.student_name,
         source: 'request',
+        notifyTrainer: false,
       })
 
       await client.query(
