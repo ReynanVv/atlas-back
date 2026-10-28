@@ -16,10 +16,24 @@ export async function ensureAtlasImprovementsSchema(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS atlas_template_prescriptions (
+      id UUID PRIMARY KEY,
+      template_id UUID NOT NULL REFERENCES atlas_workout_templates(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      notes TEXT NOT NULL DEFAULT '',
+      estimated_minutes INTEGER NOT NULL DEFAULT 0,
+      scheduled_days SMALLINT[] NOT NULL DEFAULT '{}',
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
     ALTER TABLE atlas_workout_exercises
       ADD COLUMN IF NOT EXISTS prescription_id UUID;
 
     ALTER TABLE atlas_workout_sessions
+      ADD COLUMN IF NOT EXISTS prescription_id UUID;
+
+    ALTER TABLE atlas_template_exercises
       ADD COLUMN IF NOT EXISTS prescription_id UUID;
 
     CREATE INDEX IF NOT EXISTS idx_atlas_prescriptions_workout
@@ -28,7 +42,58 @@ export async function ensureAtlasImprovementsSchema(pool) {
       ON atlas_workout_exercises(prescription_id);
     CREATE INDEX IF NOT EXISTS idx_atlas_sessions_prescription
       ON atlas_workout_sessions(prescription_id);
+    CREATE INDEX IF NOT EXISTS idx_atlas_template_prescriptions_template
+      ON atlas_template_prescriptions(template_id, position);
+    CREATE INDEX IF NOT EXISTS idx_atlas_template_exercises_prescription
+      ON atlas_template_exercises(prescription_id);
   `)
+
+
+  const { rows: legacyTemplates } = await pool.query(`
+    SELECT t.id, t.name, t.notes, t.estimated_minutes
+    FROM atlas_workout_templates t
+    WHERE NOT EXISTS (
+      SELECT 1 FROM atlas_template_prescriptions p WHERE p.template_id = t.id
+    )
+  `)
+
+  for (const template of legacyTemplates) {
+    const prescriptionId = crypto.randomUUID()
+    await pool.query(
+      `INSERT INTO atlas_template_prescriptions
+        (id, template_id, name, notes, estimated_minutes, scheduled_days, position)
+       VALUES ($1, $2, $3, $4, $5, '{}'::smallint[], 0)`,
+      [
+        prescriptionId,
+        template.id,
+        template.name || 'Prescrição 1',
+        template.notes || '',
+        Number(template.estimated_minutes || 0),
+      ]
+    )
+    await pool.query(
+      'UPDATE atlas_template_exercises SET prescription_id = $2 WHERE template_id = $1 AND prescription_id IS NULL',
+      [template.id, prescriptionId]
+    )
+  }
+
+  const { rows: orphanTemplateExercises } = await pool.query(`
+    SELECT DISTINCT e.template_id
+    FROM atlas_template_exercises e
+    WHERE e.prescription_id IS NULL
+  `)
+  for (const row of orphanTemplateExercises) {
+    const { rows } = await pool.query(
+      'SELECT id FROM atlas_template_prescriptions WHERE template_id = $1 ORDER BY position LIMIT 1',
+      [row.template_id]
+    )
+    if (rows[0]) {
+      await pool.query(
+        'UPDATE atlas_template_exercises SET prescription_id = $2 WHERE template_id = $1 AND prescription_id IS NULL',
+        [row.template_id, rows[0].id]
+      )
+    }
+  }
 
   const { rows: legacyWorkouts } = await pool.query(`
     SELECT w.id, w.scheduled_days, w.estimated_minutes

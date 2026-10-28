@@ -36,3 +36,5 @@ Este repositório implementa a API do Atlas. As regras abaixo são contratos de 
 ## Restrição de migração
 
 Enquanto houver legado compartilhado, mudanças de schema devem ser aditivas e não destrutivas sem uma migração explicitamente planejada.
+
+18. O template representa o treino completo, incluindo suas prescrições e exercícios. Uma prescrição isolada não é um template de treino.
