@@ -32,6 +32,51 @@ async function reviewEligibility(pool, trainerId, studentId) {
 }
 
 export function registerReviewRoutes({ app, pool, atlasRequireAuth, atlasRole }) {
+  app.get('/atlas-api/trainer/reviews', atlasRequireAuth, atlasRole('trainer'), async (req, res, next) => {
+    try {
+      const { rows: summaryRows } = await pool.query(
+        `SELECT COALESCE(ROUND(AVG(rating)::numeric, 2), 0)::float8 AS "ratingAverage",
+                COUNT(*)::int AS "ratingCount",
+                COUNT(*) FILTER (WHERE rating = 5)::int AS "fiveStar",
+                COUNT(*) FILTER (WHERE rating = 4)::int AS "fourStar",
+                COUNT(*) FILTER (WHERE rating = 3)::int AS "threeStar",
+                COUNT(*) FILTER (WHERE rating = 2)::int AS "twoStar",
+                COUNT(*) FILTER (WHERE rating = 1)::int AS "oneStar"
+         FROM atlas_trainer_reviews
+         WHERE trainer_id = $1`,
+        [req.atlasUser.id]
+      )
+
+      const { rows: reviews } = await pool.query(
+        `SELECT r.id, r.rating, r.comment,
+                r.created_at AS "createdAt", r.updated_at AS "updatedAt",
+                u.id AS "studentId", u.name AS "studentName",
+                u.email AS "studentEmail", u.avatar_url AS "studentAvatarUrl"
+         FROM atlas_trainer_reviews r
+         JOIN atlas_users u ON u.id = r.student_id
+         WHERE r.trainer_id = $1
+         ORDER BY r.updated_at DESC`,
+        [req.atlasUser.id]
+      )
+
+      const summary = summaryRows[0] || {}
+      res.json({
+        summary: {
+          ratingAverage: Number(summary.ratingAverage || 0),
+          ratingCount: Number(summary.ratingCount || 0),
+          distribution: {
+            5: Number(summary.fiveStar || 0),
+            4: Number(summary.fourStar || 0),
+            3: Number(summary.threeStar || 0),
+            2: Number(summary.twoStar || 0),
+            1: Number(summary.oneStar || 0),
+          },
+        },
+        reviews,
+      })
+    } catch (error) { next(error) }
+  })
+
   app.get('/atlas-api/trainers/:id/public-profile', atlasRequireAuth, atlasRole('student'), async (req, res, next) => {
     try {
       const { rows: trainerRows } = await pool.query(
