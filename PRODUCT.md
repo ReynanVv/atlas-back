@@ -38,3 +38,5 @@ Este repositório implementa a API do Atlas. As regras abaixo são contratos de 
 Enquanto houver legado compartilhado, mudanças de schema devem ser aditivas e não destrutivas sem uma migração explicitamente planejada.
 
 18. O template representa o treino completo, incluindo suas prescrições e exercícios. Uma prescrição isolada não é um template de treino.
+
+19. O treinador recebe uma notificação quando um novo aluno se vincula, seja por convite ou por perfil público; vínculos já existentes não geram notificações duplicadas.

@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import pg from 'pg';
 import { ensureAtlasExtraSchema, registerAtlasExtraRoutes } from './atlas-extra.js';
 import { ensureAtlasImprovementsSchema, registerAtlasImprovementRoutes } from './src/improvements/index.js';
+import { createTrainerStudentLink } from './src/improvements/link-notifications.js';
 
 const { Pool } = pg;
 const scryptAsync = promisify(crypto.scrypt);
@@ -1029,12 +1030,12 @@ app.post('/atlas-api/auth/register', authLimit, asyncRoute(async (req, res) => {
         'UPDATE atlas_invitations SET accepted_at = NOW(), student_email = $2 WHERE id = $1',
         [invitation.id, email]
       );
-      await client.query(
-        `INSERT INTO atlas_trainer_students (id, trainer_id, student_id)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (trainer_id, student_id) DO NOTHING`,
-        [crypto.randomUUID(), invitation.trainer_id, userId]
-      );
+      await createTrainerStudentLink(client, {
+        trainerId: invitation.trainer_id,
+        studentId: userId,
+        studentName: name,
+        source: 'invite',
+      });
     }
 
     await client.query('COMMIT');
@@ -1171,12 +1172,12 @@ app.post('/atlas-api/invitations/accept-token', atlasRequireAuth, asyncRoute(asy
       'UPDATE atlas_invitations SET accepted_at = NOW(), student_email = $2 WHERE id = $1',
       [invitation.id, req.atlasUser.email]
     );
-    await client.query(
-      `INSERT INTO atlas_trainer_students (id, trainer_id, student_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (trainer_id, student_id) DO NOTHING`,
-      [crypto.randomUUID(), invitation.trainer_id, req.atlasUser.id]
-    );
+    await createTrainerStudentLink(client, {
+      trainerId: invitation.trainer_id,
+      studentId: req.atlasUser.id,
+      studentName: req.atlasUser.name,
+      source: 'invite',
+    });
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -1246,12 +1247,12 @@ app.post('/atlas-api/invitations/:id/accept', atlasRequireAuth, atlasRole('stude
 
   if (!invitation.accepted_at) {
     await pool.query('UPDATE atlas_invitations SET accepted_at = NOW() WHERE id = $1', [invitation.id]);
-    await pool.query(
-      `INSERT INTO atlas_trainer_students (id, trainer_id, student_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (trainer_id, student_id) DO NOTHING`,
-      [crypto.randomUUID(), invitation.trainer_id, req.atlasUser.id]
-    );
+    await createTrainerStudentLink(pool, {
+      trainerId: invitation.trainer_id,
+      studentId: req.atlasUser.id,
+      studentName: req.atlasUser.name,
+      source: 'invite',
+    });
   }
 
   res.json({ id: invitation.id, status: 'Accepted' });
@@ -1774,12 +1775,12 @@ app.post('/atlas-demo/accept', asyncRoute(async (_req, res) => {
     if (!rows[0]) return atlasDemoRedirect(res, 'student', '', 'Nenhum convite pendente foi encontrado.');
 
     await pool.query('UPDATE atlas_invitations SET accepted_at = NOW() WHERE id = $1', [rows[0].id]);
-    await pool.query(
-      `INSERT INTO atlas_trainer_students (id, trainer_id, student_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (trainer_id, student_id) DO NOTHING`,
-      [crypto.randomUUID(), ATLAS_DEMO_TRAINER_ID, ATLAS_DEMO_STUDENT_ID]
-    );
+    await createTrainerStudentLink(pool, {
+      trainerId: ATLAS_DEMO_TRAINER_ID,
+      studentId: ATLAS_DEMO_STUDENT_ID,
+      studentName: 'Aluno Atlas',
+      source: 'invite',
+    });
     atlasDemoRedirect(res, 'student', 'Convite aceito. Agora informe sua disponibilidade.');
   } catch (error) {
     console.error('Atlas demo accept:', error);

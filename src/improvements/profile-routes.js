@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import { cleanText } from './shared.js'
+import { createTrainerStudentLink } from './link-notifications.js'
 
 async function profilesFor(pool, userId, fallbackRole) {
   await pool.query(
@@ -111,13 +112,27 @@ export function registerProfileRoutes({ app, pool, atlasRequireAuth, atlasRole }
         [req.params.id]
       )
       if (!rows[0]) return res.status(404).json({ error: 'Treinador público não encontrado.' })
-      await pool.query(
-        `INSERT INTO atlas_trainer_students (id, trainer_id, student_id)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (trainer_id, student_id) DO NOTHING`,
-        [crypto.randomUUID(), req.params.id, req.atlasUser.id]
-      )
-      res.status(201).json({ trainerId: req.params.id, linked: true })
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        const link = await createTrainerStudentLink(client, {
+          trainerId: req.params.id,
+          studentId: req.atlasUser.id,
+          studentName: req.atlasUser.name,
+          source: 'public',
+        })
+        await client.query('COMMIT')
+        res.status(link.created ? 201 : 200).json({
+          trainerId: req.params.id,
+          linked: true,
+          created: link.created,
+        })
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {})
+        throw error
+      } finally {
+        client.release()
+      }
     } catch (error) { next(error) }
   })
 
