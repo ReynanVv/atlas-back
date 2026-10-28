@@ -23,6 +23,10 @@ Este repositório implementa a API do Atlas. As regras abaixo são contratos de 
 11. Notificações cobrem prescrição, mensagem e treino do dia.
 12. **Intensidade não faz parte do domínio do Atlas.**
 13. Uma prescrição pode ser editada por completo enquanto ainda não houver sessão iniciada. Depois do primeiro início, ela fica imutável para preservar o histórico.
+14. Um treino é um plano que pode conter qualquer quantidade de prescrições; cada prescrição possui seus próprios dias, duração, observações e exercícios.
+15. O treinador pode definir o perfil como público ou privado. Perfis públicos podem ser encontrados e vinculados por alunos; perfis privados entram somente por convite.
+16. A biblioteca de exercícios separa itens pessoais dos itens externos. A fonte externa inicial é o wger, priorizando conteúdo em pt-BR.
+17. O horário sugerido não faz parte da criação de novos treinos.
 
 ## Lacunas conhecidas
 

@@ -5,6 +5,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import pg from 'pg';
 import { ensureAtlasExtraSchema, registerAtlasExtraRoutes } from './atlas-extra.js';
+import { ensureAtlasImprovementsSchema, registerAtlasImprovementRoutes } from './src/improvements/index.js';
 
 const { Pool } = pg;
 const scryptAsync = promisify(crypto.scrypt);
@@ -943,6 +944,7 @@ async function ensureAtlasSchema() {
   `, [trainerPassword, studentPassword]);
 }
 
+registerAtlasImprovementRoutes({ app, pool, atlasRequireAuth, atlasRole });
 registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRole });
 
 app.get('/atlas-api/health', (_req, res) => {
@@ -2000,6 +2002,7 @@ app.listen(PORT, '0.0.0.0', () => {
     await ensureSchema();
     await ensureAtlasSchema();
     await ensureAtlasExtraSchema(pool);
+    await ensureAtlasImprovementsSchema(pool);
     console.log('Schemas ControlFinance/Atlas verificados.');
   } catch (error) {
     console.error('Falha ao verificar schemas:', error);
