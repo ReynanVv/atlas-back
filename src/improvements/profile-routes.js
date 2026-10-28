@@ -81,9 +81,12 @@ export function registerProfileRoutes({ app, pool, atlasRequireAuth, atlasRole }
          FROM atlas_users u
          WHERE u.trainer_public = TRUE
            AND u.id <> $1
-           AND EXISTS (
-             SELECT 1 FROM atlas_user_profiles p
-             WHERE p.user_id = u.id AND p.profile = 'trainer'
+           AND (
+             u.role = 'trainer'
+             OR EXISTS (
+               SELECT 1 FROM atlas_user_profiles p
+               WHERE p.user_id = u.id AND p.profile = 'trainer'
+             )
            )
          ORDER BY linked DESC, u.name`,
         [req.atlasUser.id]
@@ -98,9 +101,12 @@ export function registerProfileRoutes({ app, pool, atlasRequireAuth, atlasRole }
         `SELECT u.id
          FROM atlas_users u
          WHERE u.id = $1 AND u.trainer_public = TRUE
-           AND EXISTS (
-             SELECT 1 FROM atlas_user_profiles p
-             WHERE p.user_id = u.id AND p.profile = 'trainer'
+           AND (
+             u.role = 'trainer'
+             OR EXISTS (
+               SELECT 1 FROM atlas_user_profiles p
+               WHERE p.user_id = u.id AND p.profile = 'trainer'
+             )
            )`,
         [req.params.id]
       )
