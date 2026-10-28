@@ -136,6 +136,50 @@ export function registerProfileRoutes({ app, pool, atlasRequireAuth, atlasRole }
     } catch (error) { next(error) }
   })
 
+  app.delete('/atlas-api/trainer/students/:id', atlasRequireAuth, atlasRole('trainer'), async (req, res, next) => {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+
+      const { rows } = await client.query(
+        `DELETE FROM atlas_trainer_students
+         WHERE trainer_id = $1 AND student_id = $2
+         RETURNING id`,
+        [req.atlasUser.id, req.params.id]
+      )
+      if (!rows[0]) {
+        await client.query('ROLLBACK')
+        return res.status(404).json({ error: 'Aluno não está vinculado a você.' })
+      }
+
+      await client.query(
+        `INSERT INTO atlas_notifications
+          (id, user_id, type, title, body, reference_id, occurrence_key)
+         VALUES ($1, $2, 'trainer_unlinked', 'Vínculo encerrado', $3, $4, $5)
+         ON CONFLICT (user_id, type, reference_id, occurrence_key) DO NOTHING`,
+        [
+          crypto.randomUUID(),
+          req.params.id,
+          `${req.atlasUser.name} encerrou o vínculo de acompanhamento. Seu histórico de treinos continua salvo no Atlas.`,
+          req.atlasUser.id,
+          rows[0].id,
+        ]
+      )
+
+      await client.query('COMMIT')
+      res.json({
+        studentId: req.params.id,
+        unlinked: true,
+        dataPreserved: true,
+      })
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {})
+      next(error)
+    } finally {
+      client.release()
+    }
+  })
+
   app.post('/atlas-api/trainer/students/:id/remind-workout', atlasRequireAuth, atlasRole('trainer'), async (req, res, next) => {
     try {
       const linked = await pool.query(
