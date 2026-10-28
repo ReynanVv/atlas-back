@@ -46,3 +46,5 @@ Enquanto houver legado compartilhado, mudanças de schema devem ser aditivas e n
 21. Perfis públicos não criam vínculo automaticamente. O aluno envia uma solicitação com mensagem opcional; o treinador aceita ou recusa. O vínculo só nasce no aceite.
 
 22. Alunos que concluíram ao menos uma sessão prescrita por um professor podem avaliá-lo de 1 a 5 estrelas com comentário opcional. Cada aluno possui uma avaliação por professor, que pode ser atualizada. A média e a quantidade de avaliações aparecem no perfil público.
+
+23. O professor possui uma página privada de avaliações recebidas com nota média, total, distribuição por estrelas e lista de avaliações/comentários dos alunos.
