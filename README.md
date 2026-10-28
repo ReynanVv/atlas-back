@@ -1,32 +1,49 @@
 # Atlas API
 
-Backend do Atlas preparado para ser separado do serviço do ControlFinance.
+Backend oficial do Atlas.
 
-## Estado desta cópia
+## Stack
 
-Esta branch foi criada a partir de `feature/accounts` do repositório `controlfinance`, que contém o backend integrado atualmente usado pelo Atlas.
+- Node.js 20+
+- Express
+- PostgreSQL
+- Render
 
-Para evitar qualquer risco na migração, o código do ControlFinance foi mantido nesta cópia. Nenhum arquivo foi removido do repositório original. Depois que o novo serviço `atlas-back` estiver validado no Render, o backend pode ser refatorado para conter somente as rotas do Atlas.
+## API
 
-## Atlas
+- Base: `/atlas-api`
+- Health: `/atlas-api/health`
 
-- API base: `/atlas-api`
-- Health check: `/atlas-api/health`
-- PostgreSQL: reutilize a mesma `DATABASE_URL` atual durante a migração para manter os dados e tabelas `atlas_*`.
-- Node.js: 20+
+## Rodar
 
-## Variáveis de ambiente
+```bash
+npm install
+npm run dev
+```
+
+## Verificar
+
+```bash
+npm run verify
+```
+
+## Variáveis
 
 ```env
 DATABASE_URL=postgres://...
-SESSION_SECRET=uma-chave-grande
-ATLAS_DEMO_PASSWORD=senha-opcional-da-demo
+SESSION_SECRET=uma-chave-segura
+ATLAS_DEMO_PASSWORD=opcional
 PORT=3000
 NODE_ENV=production
 ```
 
-## Render
+## Documentação
 
-Ao criar o novo Web Service, aponte para o repositório `atlas-back`, use `npm install` no build e `npm start` no start. Configure o health check como `/atlas-api/health`.
+- `PRODUCT.md` — contratos do produto;
+- `AGENTS.md` — comandos e regras para agentes;
+- `docs/architecture.md` — fronteiras atuais e direção de refatoração;
+- `docs/onboarding.md` — setup local;
+- `docs/quality.md` — checks e estratégia de legado;
+- `docs/setup.md` — adoção do toolkit.
 
-Durante a migração, não desligue nem altere o serviço atual do ControlFinance até confirmar que o frontend do Atlas está respondendo pelo novo endpoint.
+O serviço ainda contém legado do ControlFinance por segurança da migração. A remoção desse legado deve ocorrer em mudanças separadas e verificáveis.

@@ -1,18 +1,11 @@
 import crypto from 'node:crypto';
+import { statusForWorkout, workoutDays } from './src/domain/workouts.js';
 
 function cleanText(value, label, required = false, max = 2000) {
   const text = value == null ? '' : String(value).trim();
   if (required && !text) throw new Error(`${label} é obrigatório.`);
   if (text.length > max) throw new Error(`${label} é muito longo.`);
   return text;
-}
-
-function workoutDays(value) {
-  const days = [...new Set((Array.isArray(value) ? value : []).map(Number))].sort((a, b) => a - b);
-  if (!days.length || days.some((item) => !Number.isInteger(item) || item < 0 || item > 6)) {
-    throw new Error('Selecione pelo menos um dia válido da semana.');
-  }
-  return days;
 }
 
 async function getProfiles(pool, user) {
@@ -120,43 +113,6 @@ async function progressForStudent(pool, studentId, trainerId = null) {
     exercises,
     annotations,
   };
-}
-
-function startOfToday(date = new Date()) {
-  const result = new Date(date);
-  result.setHours(0, 0, 0, 0);
-  return result;
-}
-
-function occurrenceDateForWorkout(workout, now = new Date()) {
-  const days = Array.isArray(workout.scheduled_days)
-    ? workout.scheduled_days.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
-    : [];
-  if (!days.length) return null;
-
-  const today = startOfToday(now);
-  const todayDow = today.getDay();
-  const pastOrToday = days.filter((day) => day <= todayDow);
-  const targetDow = pastOrToday.length ? Math.max(...pastOrToday) : Math.max(...days);
-  const delta = pastOrToday.length ? todayDow - targetDow : todayDow + 7 - targetDow;
-  const occurrence = new Date(today);
-  occurrence.setDate(today.getDate() - delta);
-  return occurrence;
-}
-
-function statusForWorkout(workout, latestSession) {
-  if (latestSession?.startedAt && !latestSession?.completedAt) return 'Pendente';
-
-  const occurrence = occurrenceDateForWorkout(workout);
-  if (!occurrence) return latestSession?.completedAt ? 'Realizado' : 'Pendente';
-
-  const completedAt = latestSession?.completedAt ? new Date(latestSession.completedAt) : null;
-  if (completedAt && completedAt >= occurrence) return 'Realizado';
-
-  const today = startOfToday();
-  const days = Array.isArray(workout.scheduled_days) ? workout.scheduled_days.map(Number) : [];
-  if (days.includes(today.getDay())) return 'Pendente';
-  return occurrence < today ? 'Não Realizado' : 'Pendente';
 }
 
 async function workoutPayload(pool, workout) {
