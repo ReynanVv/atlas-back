@@ -79,12 +79,22 @@ export function registerProfileRoutes({ app, pool, atlasRequireAuth, atlasRole }
                   WHERE ts.trainer_id = u.id AND ts.student_id = $1
                 ) AS linked,
                 COALESCE((
-                  SELECT r.status
-                  FROM atlas_trainer_link_requests r
-                  WHERE r.trainer_id = u.id AND r.student_id = $1
-                  ORDER BY r.created_at DESC
+                  SELECT lr.status
+                  FROM atlas_trainer_link_requests lr
+                  WHERE lr.trainer_id = u.id AND lr.student_id = $1
+                  ORDER BY lr.created_at DESC
                   LIMIT 1
-                ), '') AS "requestStatus"
+                ), '') AS "requestStatus",
+                COALESCE((
+                  SELECT ROUND(AVG(rv.rating)::numeric, 2)::float8
+                  FROM atlas_trainer_reviews rv
+                  WHERE rv.trainer_id = u.id
+                ), 0) AS "ratingAverage",
+                (
+                  SELECT COUNT(*)::int
+                  FROM atlas_trainer_reviews rv
+                  WHERE rv.trainer_id = u.id
+                ) AS "ratingCount"
          FROM atlas_users u
          WHERE u.trainer_public = TRUE
            AND u.id <> $1

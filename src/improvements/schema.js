@@ -37,6 +37,17 @@ export async function ensureAtlasImprovementsSchema(pool) {
       responded_at TIMESTAMPTZ
     );
 
+    CREATE TABLE IF NOT EXISTS atlas_trainer_reviews (
+      id UUID PRIMARY KEY,
+      trainer_id UUID NOT NULL REFERENCES atlas_users(id) ON DELETE CASCADE,
+      student_id UUID NOT NULL REFERENCES atlas_users(id) ON DELETE CASCADE,
+      rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+      comment TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (trainer_id, student_id)
+    );
+
     ALTER TABLE atlas_workout_exercises
       ADD COLUMN IF NOT EXISTS prescription_id UUID;
 
@@ -63,6 +74,10 @@ export async function ensureAtlasImprovementsSchema(pool) {
     CREATE UNIQUE INDEX IF NOT EXISTS ux_atlas_link_requests_pending
       ON atlas_trainer_link_requests(trainer_id, student_id)
       WHERE status = 'pending';
+    CREATE INDEX IF NOT EXISTS idx_atlas_trainer_reviews_trainer
+      ON atlas_trainer_reviews(trainer_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_atlas_trainer_reviews_student
+      ON atlas_trainer_reviews(student_id, updated_at DESC);
   `)
 
 

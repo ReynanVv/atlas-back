@@ -44,3 +44,5 @@ Enquanto houver legado compartilhado, mudanças de schema devem ser aditivas e n
 20. O treinador pode desvincular um aluno sem apagar conta, treinos, sessões, histórico ou mensagens antigas. A desvinculação encerra apenas a relação ativa e impede novas ações que dependem do vínculo até que ele seja criado novamente.
 
 21. Perfis públicos não criam vínculo automaticamente. O aluno envia uma solicitação com mensagem opcional; o treinador aceita ou recusa. O vínculo só nasce no aceite.
+
+22. Alunos que concluíram ao menos uma sessão prescrita por um professor podem avaliá-lo de 1 a 5 estrelas com comentário opcional. Cada aluno possui uma avaliação por professor, que pode ser atualizada. A média e a quantidade de avaliações aparecem no perfil público.
