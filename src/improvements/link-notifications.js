@@ -5,6 +5,7 @@ export async function createTrainerStudentLink(db, {
   studentId,
   studentName,
   source = 'invite',
+  notifyTrainer = true,
 }) {
   const linkId = crypto.randomUUID()
   const result = await db.query(
@@ -19,18 +20,20 @@ export async function createTrainerStudentLink(db, {
     return { created: false, linkId: null }
   }
 
-  const safeName = String(studentName || 'Um novo aluno').trim() || 'Um novo aluno'
-  const body = source === 'public'
-    ? `${safeName} vinculou-se ao seu perfil público.`
-    : `${safeName} aceitou seu convite e agora está vinculado a você.`
+  if (notifyTrainer) {
+    const safeName = String(studentName || 'Um novo aluno').trim() || 'Um novo aluno'
+    const body = source === 'public'
+      ? `${safeName} vinculou-se ao seu perfil público.`
+      : `${safeName} aceitou seu convite e agora está vinculado a você.`
 
-  await db.query(
-    `INSERT INTO atlas_notifications
-      (id, user_id, type, title, body, reference_id, occurrence_key)
-     VALUES ($1, $2, 'student_linked', 'Novo aluno vinculado', $3, $4, $5)
-     ON CONFLICT (user_id, type, reference_id, occurrence_key) DO NOTHING`,
-    [crypto.randomUUID(), trainerId, body, studentId, result.rows[0].id]
-  )
+    await db.query(
+      `INSERT INTO atlas_notifications
+        (id, user_id, type, title, body, reference_id, occurrence_key)
+       VALUES ($1, $2, 'student_linked', 'Novo aluno vinculado', $3, $4, $5)
+       ON CONFLICT (user_id, type, reference_id, occurrence_key) DO NOTHING`,
+      [crypto.randomUUID(), trainerId, body, studentId, result.rows[0].id]
+    )
+  }
 
   return { created: true, linkId: result.rows[0].id }
 }

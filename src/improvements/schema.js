@@ -27,6 +27,16 @@ export async function ensureAtlasImprovementsSchema(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS atlas_trainer_link_requests (
+      id UUID PRIMARY KEY,
+      trainer_id UUID NOT NULL REFERENCES atlas_users(id) ON DELETE CASCADE,
+      student_id UUID NOT NULL REFERENCES atlas_users(id) ON DELETE CASCADE,
+      message TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      responded_at TIMESTAMPTZ
+    );
+
     ALTER TABLE atlas_workout_exercises
       ADD COLUMN IF NOT EXISTS prescription_id UUID;
 
@@ -46,6 +56,13 @@ export async function ensureAtlasImprovementsSchema(pool) {
       ON atlas_template_prescriptions(template_id, position);
     CREATE INDEX IF NOT EXISTS idx_atlas_template_exercises_prescription
       ON atlas_template_exercises(prescription_id);
+    CREATE INDEX IF NOT EXISTS idx_atlas_link_requests_trainer
+      ON atlas_trainer_link_requests(trainer_id, status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_atlas_link_requests_student
+      ON atlas_trainer_link_requests(student_id, status, created_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_atlas_link_requests_pending
+      ON atlas_trainer_link_requests(trainer_id, student_id)
+      WHERE status = 'pending';
   `)
 
 

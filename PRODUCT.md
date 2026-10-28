@@ -42,3 +42,5 @@ Enquanto houver legado compartilhado, mudanças de schema devem ser aditivas e n
 19. O treinador recebe uma notificação quando um novo aluno se vincula, seja por convite ou por perfil público; vínculos já existentes não geram notificações duplicadas.
 
 20. O treinador pode desvincular um aluno sem apagar conta, treinos, sessões, histórico ou mensagens antigas. A desvinculação encerra apenas a relação ativa e impede novas ações que dependem do vínculo até que ele seja criado novamente.
+
+21. Perfis públicos não criam vínculo automaticamente. O aluno envia uma solicitação com mensagem opcional; o treinador aceita ou recusa. O vínculo só nasce no aceite.

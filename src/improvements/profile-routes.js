@@ -1,6 +1,5 @@
 import crypto from 'node:crypto'
 import { cleanText } from './shared.js'
-import { createTrainerStudentLink } from './link-notifications.js'
 
 async function profilesFor(pool, userId, fallbackRole) {
   await pool.query(
@@ -78,7 +77,14 @@ export function registerProfileRoutes({ app, pool, atlasRequireAuth, atlasRole }
                 EXISTS (
                   SELECT 1 FROM atlas_trainer_students ts
                   WHERE ts.trainer_id = u.id AND ts.student_id = $1
-                ) AS linked
+                ) AS linked,
+                COALESCE((
+                  SELECT r.status
+                  FROM atlas_trainer_link_requests r
+                  WHERE r.trainer_id = u.id AND r.student_id = $1
+                  ORDER BY r.created_at DESC
+                  LIMIT 1
+                ), '') AS "requestStatus"
          FROM atlas_users u
          WHERE u.trainer_public = TRUE
            AND u.id <> $1
@@ -96,44 +102,10 @@ export function registerProfileRoutes({ app, pool, atlasRequireAuth, atlasRole }
     } catch (error) { next(error) }
   })
 
-  app.post('/atlas-api/trainers/:id/link', atlasRequireAuth, atlasRole('student'), async (req, res, next) => {
-    try {
-      const { rows } = await pool.query(
-        `SELECT u.id
-         FROM atlas_users u
-         WHERE u.id = $1 AND u.trainer_public = TRUE
-           AND (
-             u.role = 'trainer'
-             OR EXISTS (
-               SELECT 1 FROM atlas_user_profiles p
-               WHERE p.user_id = u.id AND p.profile = 'trainer'
-             )
-           )`,
-        [req.params.id]
-      )
-      if (!rows[0]) return res.status(404).json({ error: 'Treinador público não encontrado.' })
-      const client = await pool.connect()
-      try {
-        await client.query('BEGIN')
-        const link = await createTrainerStudentLink(client, {
-          trainerId: req.params.id,
-          studentId: req.atlasUser.id,
-          studentName: req.atlasUser.name,
-          source: 'public',
-        })
-        await client.query('COMMIT')
-        res.status(link.created ? 201 : 200).json({
-          trainerId: req.params.id,
-          linked: true,
-          created: link.created,
-        })
-      } catch (error) {
-        await client.query('ROLLBACK').catch(() => {})
-        throw error
-      } finally {
-        client.release()
-      }
-    } catch (error) { next(error) }
+  app.post('/atlas-api/trainers/:id/link', atlasRequireAuth, atlasRole('student'), async (_req, res) => {
+    res.status(410).json({
+      error: 'O vínculo direto com perfil público foi desativado. Envie uma solicitação ao treinador.',
+    })
   })
 
   app.delete('/atlas-api/trainer/students/:id', atlasRequireAuth, atlasRole('trainer'), async (req, res, next) => {
