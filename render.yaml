@@ -13,5 +13,7 @@ services:
         sync: false
       - key: SESSION_SECRET
         generateValue: true
+      - key: ATLAS_DEMO_ENABLED
+        value: "false"
       - key: ATLAS_DEMO_PASSWORD
         sync: false
