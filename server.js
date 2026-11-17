@@ -7,13 +7,16 @@ import pg from 'pg';
 import { ensureAtlasExtraSchema, registerAtlasExtraRoutes } from './atlas-extra.js';
 import { ensureAtlasImprovementsSchema, registerAtlasImprovementRoutes } from './src/improvements/index.js';
 import { createTrainerStudentLink } from './src/improvements/link-notifications.js';
+import { atlasAllowedOrigins, isDemoEnabled, isProductionRuntime, requireSessionSecret } from './src/security.js';
 
 const { Pool } = pg;
 const scryptAsync = promisify(crypto.scrypt);
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const DATABASE_URL = process.env.DATABASE_URL;
-const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
+const IS_PRODUCTION = isProductionRuntime(process.env);
+const DEMO_ENABLED = isDemoEnabled(process.env);
+const SESSION_SECRET = requireSessionSecret(process.env.SESSION_SECRET, process.env);
 
 if (!DATABASE_URL) throw new Error('DATABASE_URL não configurada.');
 
@@ -30,6 +33,8 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  if (IS_PRODUCTION) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  if (req.path.startsWith('/atlas-api') || req.path.startsWith('/api')) res.setHeader('Cache-Control', 'no-store');
   res.setHeader(
     'Content-Security-Policy',
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
@@ -42,10 +47,13 @@ app.use(express.urlencoded({ extended: false, limit: '32kb' }));
 app.use(cookieParser(SESSION_SECRET));
 app.use(express.static('public'));
 
-const ATLAS_FRONT_ORIGINS = new Set(['https://atlas-front-kl8a.onrender.com','https://atlas-live-i72f.onrender.com','http://localhost:5173','http://127.0.0.1:5173']);
+const ATLAS_FRONT_ORIGINS = atlasAllowedOrigins(process.env);
 app.use('/atlas-api', (req, res, next) => {
   const origin = req.headers.origin;
-  if (ATLAS_FRONT_ORIGINS.has(origin)) {
+  if (origin && !ATLAS_FRONT_ORIGINS.has(origin)) {
+    return res.status(403).json({ error: 'Origem não permitida.' });
+  }
+  if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -96,6 +104,12 @@ const globalApiLimit = rateLimit({
   name: 'api',
   windowMs: 60 * 1000,
   max: 120,
+});
+
+const atlasApiLimit = rateLimit({
+  name: 'atlas-api',
+  windowMs: 60 * 1000,
+  max: 180,
 });
 
 const authLimit = rateLimit({
@@ -318,6 +332,7 @@ async function ensureSchema() {
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api', globalApiLimit);
+app.use('/atlas-api', atlasApiLimit);
 
 app.get('/api/auth/status', asyncRoute(async (req, res) => {
   const userId = signedInUserId(req);
@@ -754,7 +769,7 @@ app.post('/api/import-local', asyncRoute(async (req, res) => {
 
 // -----------------------------
 // Atlas demo API (shares the existing Postgres using atlas_* tables)
-const ATLAS_DEMO_PASSWORD = process.env.ATLAS_DEMO_PASSWORD || crypto.randomUUID();
+const ATLAS_DEMO_PASSWORD = DEMO_ENABLED ? (process.env.ATLAS_DEMO_PASSWORD || crypto.randomUUID()) : '';
 // -----------------------------
 
 function atlasTokenHash(token) {
@@ -932,31 +947,49 @@ async function ensureAtlasSchema() {
       WHERE token_hash IS NOT NULL;
   `);
 
-  const trainerPassword = await hashPassword(ATLAS_DEMO_PASSWORD);
-  const studentPassword = await hashPassword(ATLAS_DEMO_PASSWORD);
+  if (DEMO_ENABLED) {
+    const trainerPassword = await hashPassword(ATLAS_DEMO_PASSWORD);
+    const studentPassword = await hashPassword(ATLAS_DEMO_PASSWORD);
 
-  await pool.query(`
-    INSERT INTO atlas_users (id, name, email, role, password_hash)
-    VALUES
-      ('11111111-1111-4111-8111-111111111111', 'Professor Atlas', 'professor@atlas.test', 'trainer', $1),
-      ('22222222-2222-4222-8222-222222222222', 'Aluno Atlas', 'aluno@atlas.test', 'student', $2)
-    ON CONFLICT (email) DO UPDATE
-    SET name = EXCLUDED.name, role = EXCLUDED.role, password_hash = EXCLUDED.password_hash
-  `, [trainerPassword, studentPassword]);
+    await pool.query(`
+      INSERT INTO atlas_users (id, name, email, role, password_hash)
+      VALUES
+        ('11111111-1111-4111-8111-111111111111', 'Professor Atlas', 'professor@atlas.test', 'trainer', $1),
+        ('22222222-2222-4222-8222-222222222222', 'Aluno Atlas', 'aluno@atlas.test', 'student', $2)
+      ON CONFLICT (email) DO UPDATE
+      SET name = EXCLUDED.name, role = EXCLUDED.role, password_hash = EXCLUDED.password_hash
+    `, [trainerPassword, studentPassword]);
+  } else {
+    await pool.query(
+      `DELETE FROM atlas_sessions
+       WHERE user_id IN (
+         '11111111-1111-4111-8111-111111111111',
+         '22222222-2222-4222-8222-222222222222'
+       )`
+    );
+  }
 }
+
+function requireDemoEnabled(_req, res, next) {
+  if (!DEMO_ENABLED) return res.status(404).json({ error: 'Rota não encontrada.' });
+  next();
+}
+
+app.use('/atlas-api/demo', requireDemoEnabled);
+app.use('/atlas-api/auth/demo-login', requireDemoEnabled);
+app.use('/atlas-demo', requireDemoEnabled);
 
 registerAtlasImprovementRoutes({ app, pool, atlasRequireAuth, atlasRole });
 registerAtlasExtraRoutes({ app, pool, atlasRequireAuth, atlasRole });
 
 app.get('/atlas-api/health', (_req, res) => {
-  res.json({ ok: true, service: 'atlas-api', database: 'shared-postgres' });
+  res.json({ ok: true, service: 'atlas-api' });
 });
 
 app.get('/atlas-api/demo', asyncRoute(async (_req, res) => {
   const { rows } = await pool.query('SELECT id, name, email, role FROM atlas_users ORDER BY role DESC');
   res.json({
     users: rows,
-    password: ATLAS_DEMO_PASSWORD,
     steps: [
       'Professor envia convite',
       'Aluno aceita o convite',
@@ -983,7 +1016,7 @@ app.post('/atlas-api/demo/reset', asyncRoute(async (req, res) => {
   res.json({ ok: true, message: 'Fluxo Atlas reiniciado. Os dois usuários de teste foram preservados.' });
 }));
 
-app.post('/atlas-api/auth/register', authLimit, asyncRoute(async (req, res) => {
+app.post('/atlas-api/auth/register', authLimit, registerLimit, asyncRoute(async (req, res) => {
   const name = text(req.body?.name, 'Nome', true, 120);
   const email = String(req.body?.email || '').trim().toLowerCase();
   const password = String(req.body?.password || '');
@@ -1057,6 +1090,7 @@ app.post('/atlas-api/auth/register', authLimit, asyncRoute(async (req, res) => {
 app.post('/atlas-api/auth/login', authLimit, asyncRoute(async (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
   const password = String(req.body?.password || '');
+  if (!checkLoginBlock(req, res, email || 'missing-email')) return;
   const { rows } = await pool.query(
     'SELECT id, name, email, role, password_hash FROM atlas_users WHERE email = $1',
     [email]
@@ -1064,9 +1098,11 @@ app.post('/atlas-api/auth/login', authLimit, asyncRoute(async (req, res) => {
 
   const user = rows[0];
   if (!user || !(await verifyPassword(password, user.password_hash))) {
+    recordLoginFailure(req, email || 'missing-email');
     return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
   }
 
+  clearLoginFailures(req, email);
   const token = crypto.randomBytes(32).toString('hex');
   const tokenHash = atlasTokenHash(token);
   await pool.query(

@@ -27,3 +27,10 @@
 - Refatore por responsabilidade e mantenha contratos HTTP existentes.
 - Não remova legado do ControlFinance sem cobertura e plano de migração.
 - Rode `npm run verify` em mudanças relevantes.
+
+## Segurança de produção
+
+- Rotas de demonstração devem permanecer desativadas no Render e nunca podem expor credenciais, emitir sessões sem autenticação ou executar resets destrutivos em produção.
+- Toda API pública deve ter rate limiting proporcional; autenticação precisa de proteção contra força bruta.
+- Segredos de sessão não podem ter fallback conhecido em produção e nunca devem ser registrados em logs ou versionados.
+- Ao remover/alterar controles de segurança, preserve CORS restrito, headers de segurança, ownership/role checks e SQL parametrizado.
