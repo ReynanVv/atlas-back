@@ -27,6 +27,7 @@ const pool = new Pool({
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+app.set('query parser', 'simple');
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -2030,9 +2031,14 @@ app.use((error, _req, res, _next) => {
   res.status(isUserError ? 400 : 500).json({ error: isUserError ? error.message : 'Erro interno do servidor.' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`ControlFinance rodando na porta ${PORT}`);
 });
+
+server.headersTimeout = 20_000;
+server.requestTimeout = 120_000;
+server.keepAliveTimeout = 5_000;
+server.maxHeadersCount = 100;
 
 (async () => {
   try {
