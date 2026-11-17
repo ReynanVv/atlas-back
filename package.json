@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": "26.x"
   },
   "scripts": {
     "start": "node server.js",
@@ -12,12 +12,13 @@
     "test": "node --test",
     "quality": "node scripts/quality.mjs",
     "check": "node --check server.js && node --check atlas-extra.js && find src -name '*.js' -print0 | xargs -0 -n1 node --check",
-    "verify": "npm run quality && npm run check && npm test"
+    "verify": "npm run quality && npm run check && npm test && npm run audit:prod",
+    "audit:prod": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "pg": "^8.13.1"
+    "express": "^4.22.3",
+    "pg": "^8.23.1"
   }
 }
